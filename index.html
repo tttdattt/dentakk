@@ -160,12 +160,12 @@ body{
 }
 </style>
 </head>
-<body>
+<body class="dark">
 
 <div class="top-buttons">
   <button class="top-btn" id="kanjiToggleBtn" onclick="toggleKanji()">漢字表示: OFF</button>
   <button class="top-btn" id="volBtn" onclick="toggleVolume()">🔊</button>
-  <button class="top-btn" id="toggleBtn" onclick="toggleDarkMode()">🌙</button>
+  <button class="top-btn" id="toggleBtn" onclick="toggleDarkMode()">☀️</button>
 </div>
 
 <div class="copy-notification" id="copyNotif">📋 コピーしました</div>
@@ -199,7 +199,7 @@ body{
   <div class="center-panel">
     <div style="font-size:0.8rem; opacity:0.6">計算結果</div>
     <div class="display" id="display">0</div>
-    <div style="font-size:0.8rem; opacity:0.6">計算履歴（クリックでコピー）</div>
+    <div style="font-size:0.8rem; opacity:0.6">計算履歴(クリックでコピー)</div>
     <div class="history" id="history"></div>
   </div>
 
@@ -225,7 +225,7 @@ const memoHistoryEl = document.getElementById('memoHistory');
 const volBtn = document.getElementById('volBtn');
 
 let formulaDisplay = '', formulaEval = '', lastWasEqual = false;
-let darkMode = false, useKanjiCompact = false, volumeOn = true;
+let darkMode = true, useKanjiCompact = false, volumeOn = true;
 
 /* --- 漢字桁表示用ロジック --- */
 const KANJI_UNITS = [
@@ -243,7 +243,7 @@ function formatNumberKanji(numStr) {
   const abs = Math.abs(num);
   const sign = num < 0 ? '-' : '';
   
-  // 1万未満はそのまま（カンマ区切り）
+  // 1万未満はそのまま(カンマ区切り)
   if (abs < 10000) return sign + num.toLocaleString('ja-JP');
 
   for (const u of KANJI_UNITS) {
