@@ -292,39 +292,30 @@ let formulaDisplay = '', formulaEval = '', lastWasEqual = false;
 let darkMode = true, useKanjiCompact = false, volumeOn = true;
 let powerMode = false, powerBase = '';
 
-/* --- メモ機能（localStorage） --- */
+/* --- メモ機能 --- */
 function saveMemo() {
-  try {
-    localStorage.setItem('calcMemo', memoBody.value);
-  } catch(e) { console.error('保存エラー:', e); }
+  try { localStorage.setItem('calcMemo', memoBody.value); } catch(e) {}
 }
 function loadMemo() {
   try {
     const saved = localStorage.getItem('calcMemo');
     if(saved !== null) memoBody.value = saved;
-  } catch(e) { console.error('読み込みエラー:', e); }
+  } catch(e) {}
 }
 memoBody.addEventListener('input', saveMemo);
 loadMemo();
 
-/* --- 漢字桁表示用ロジック --- */
+/* --- 漢字表示 --- */
 const KANJI_UNITS = [
-  {value: 1e20, unit: '垓'},
-  {value: 1e16, unit: '京'},
-  {value: 1e12, unit: '兆'},
-  {value: 1e8, unit: '億'},
-  {value: 1e4, unit: '万'}
+  {value: 1e20, unit: '垓'}, {value: 1e16, unit: '京'}, {value: 1e12, unit: '兆'},
+  {value: 1e8, unit: '億'}, {value: 1e4, unit: '万'}
 ];
-
 function formatNumberKanji(numStr) {
   const num = parseFloat(numStr);
   if (isNaN(num) || !isFinite(num)) return numStr;
-  
   const abs = Math.abs(num);
   const sign = num < 0 ? '-' : '';
-  
   if (abs < 10000) return sign + num.toLocaleString('ja-JP');
-
   for (const u of KANJI_UNITS) {
     if (abs >= u.value) {
       const v = Math.floor((abs / u.value) * 100) / 100;
@@ -334,7 +325,7 @@ function formatNumberKanji(numStr) {
   return sign + num.toLocaleString('ja-JP');
 }
 
-/* --- サウンド生成 (コトコト音) --- */
+/* --- サウンド --- */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playKotoSound() {
   if(!volumeOn) return;
@@ -348,47 +339,36 @@ function playKotoSound() {
   osc.connect(gain); gain.connect(audioCtx.destination);
   osc.start(); osc.stop(audioCtx.currentTime + 0.1);
 }
+document.querySelectorAll('button').forEach(btn => btn.addEventListener('mouseenter', playKotoSound));
 
-document.querySelectorAll('button').forEach(btn => {
-  btn.addEventListener('mouseenter', playKotoSound);
-});
-
-/* --- 電卓機能 --- */
+/* --- 電卓メインロジック --- */
 function updateDisplay(){
-  if(formulaDisplay === '') { 
-    display.innerHTML = '0'; 
-    return; 
-  }
-  
+  if(formulaDisplay === '') { display.innerHTML = '0'; return; }
   let displayText = formulaDisplay;
   const hasOperator = /[+\-×÷]/.test(formulaDisplay.replace(/\^[\d.]+/g, '')); 
-  
   if(useKanjiCompact && !hasOperator && !displayText.includes('^')) {
     display.innerHTML = formatNumberKanji(formulaDisplay);
   } else {
-    // ^の後の数字を上付き文字に変換
     displayText = displayText.replace(/\^([\d.]+)/g, '<sup>$1</sup>');
     display.innerHTML = displayText;
   }
 }
 
+// 【修正】= の後に数字を押してもリセットせず、繋げるように変更
 function press(key){
   if(/[0-9.]/.test(key)){
     if(lastWasEqual){ 
-      formulaDisplay = ''; 
-      formulaEval = ''; 
+      if(formulaDisplay === '0') {
+        formulaDisplay = '';
+        formulaEval = '';
+      }
       lastWasEqual = false; 
       powerMode = false;
       powerBase = '';
       powerBtn.classList.remove('power-active');
     }
-    
     formulaDisplay += key;
-    
-    // 乗モード中はformulaEvalには追加しない
-    if(!powerMode) {
-      formulaEval += key;
-    }
+    if(!powerMode) formulaEval += key;
   } else if(['+','-','×','÷'].includes(key)){
     if(powerMode) completePowerMode();
     lastWasEqual = false;
@@ -403,160 +383,89 @@ function pressPercent() {
   if(!formulaEval) return;
   const match = formulaEval.match(/([\d.]+)$/);
   if(match) {
-    const num = parseFloat(match[1]);
-    const percentage = num / 100;
-    formulaEval = formulaEval.slice(0, -match[1].length) + percentage;
-    formulaDisplay = formulaDisplay.slice(0, -match[1].length) + num + '%';
+    const currentNumStr = match[1];
+    const currentVal = parseFloat(currentNumStr);
+    const len = currentNumStr.length;
+    const strBefore = formulaEval.slice(0, -len);
+    const contextMatch = strBefore.match(/([\d.]+)([+\-*\/])$/);
+    let newVal;
+    if(contextMatch && ['+', '-'].includes(contextMatch[2])) {
+      const baseNum = parseFloat(contextMatch[1]);
+      newVal = baseNum * (currentVal / 100);
+    } else {
+      newVal = currentVal / 100;
+    }
+    formulaEval = strBefore + newVal;
+    formulaDisplay = formulaDisplay.slice(0, -len) + newVal;
     updateDisplay();
   }
 }
 
-/* --- 計算実行 (修正箇所) --- */
 function calculate(){
   try {
-    // 【修正】乗モード中なら強制的に確定処理を実行
-    if(powerMode) {
-      completePowerMode();
-    }
-
+    if(powerMode) completePowerMode();
     if(!formulaEval || formulaEval.trim() === '') return;
-    
     const result = eval(formulaEval);
-    if(!isFinite(result)) {
-      display.innerHTML = 'エラー';
-      return;
-    }
-    
+    if(!isFinite(result)) { display.innerHTML = 'エラー'; return; }
     const rounded = Math.round(result * 100000000) / 100000000;
     const historyText = formulaDisplay.replace(/\^([\d.]+)/g, '<sup>$1</sup>') + ' = ' + rounded;
-    
     const item = document.createElement('div');
     item.className = 'history-item';
     item.innerHTML = historyText;
     item.onclick = () => copyText(String(rounded));
     historyEl.prepend(item);
-    
     formulaDisplay = String(rounded); 
     formulaEval = String(rounded); 
     lastWasEqual = true;
-    powerMode = false;
-    powerBase = '';
-    powerBtn.classList.remove('power-active');
     updateDisplay();
-  } catch(e) { 
-    display.innerHTML = 'エラー'; 
-    console.error('計算エラー:', e);
-  }
+  } catch(e) { display.innerHTML = 'エラー'; }
 }
 
-/* --- 乗モード機能 (修正箇所) --- */
 function togglePowerMode() {
   if(!powerMode) {
-    // 乗モード開始
     const match = formulaEval.match(/([\d.]+)$/);
     if(match) {
       powerBase = match[1];
       powerMode = true;
       powerBtn.classList.add('power-active');
-      
-      // formulaEvalから底を削除
       formulaEval = formulaEval.slice(0, -powerBase.length);
-      
-      // 表示に^を追加
       formulaDisplay += '^';
     }
-  } else {
-    // 乗モード終了
-    completePowerMode();
-  }
+  } else { completePowerMode(); }
   updateDisplay();
 }
-
 function completePowerMode() {
   if(!powerMode) return;
-  
-  // 指数部分を取得（正規表現を調整）
   const exponentMatch = formulaDisplay.match(/\^([\d.]+)$/);
   if(exponentMatch) {
-    const exponent = exponentMatch[1];
-    formulaEval += `Math.pow(${powerBase},${exponent})`;
+    formulaEval += `Math.pow(${powerBase},${exponentMatch[1]})`;
   } else {
-    // 指数が入力されていない場合は^を削除して底を戻す
     formulaDisplay = formulaDisplay.replace(/\^$/, '');
     formulaEval += powerBase;
   }
-  
-  powerMode = false;
-  powerBase = '';
+  powerMode = false; powerBase = '';
   powerBtn.classList.remove('power-active');
-  // ここではupdateDisplayは呼ばず、呼び出し元に任せるか、calculateで更新する
 }
 
-function clearResult(){ 
-  formulaDisplay = ''; 
-  formulaEval = ''; 
-  powerMode = false;
-  powerBase = '';
-  powerBtn.classList.remove('power-active');
-  updateDisplay(); 
-}
-
+function clearResult(){ formulaDisplay = ''; formulaEval = ''; powerMode = false; updateDisplay(); }
 function clearHistoryOnly(){ historyEl.innerHTML = ''; }
-
 function backspace(){ 
   if(formulaDisplay.length > 0) {
     const lastChar = formulaDisplay.slice(-1);
     formulaDisplay = formulaDisplay.slice(0,-1);
-    
-    // 乗モード中でない場合のみformulaEvalも削除
-    if(!powerMode && formulaEval.length > 0) {
-      formulaEval = formulaEval.slice(0,-1);
-    }
-    
-    // ^を削除した場合は乗モードを終了
-    if(lastChar === '^') {
-      powerMode = false;
-      powerBase = '';
-      powerBtn.classList.remove('power-active');
-      formulaEval += powerBase;
-      powerBase = '';
-    }
+    if(!powerMode && formulaEval.length > 0) formulaEval = formulaEval.slice(0,-1);
+    if(lastChar === '^') { powerMode = false; powerBtn.classList.remove('power-active'); formulaEval += powerBase; }
   }
   updateDisplay(); 
 }
 
-/* --- UI設定 --- */
-function toggleVolume(){
-  volumeOn = !volumeOn;
-  volBtn.innerText = volumeOn ? '🔊' : '🔇';
-  if(audioCtx.state === 'suspended') audioCtx.resume();
-}
-
-function toggleDarkMode(){
-  darkMode = !darkMode;
-  document.body.classList.toggle('dark', darkMode);
-  document.getElementById('toggleBtn').innerText = darkMode ? '☀️' : '🌙';
-}
-
-function toggleKanji(){
-  useKanjiCompact = !useKanjiCompact;
-  document.getElementById('kanjiToggleBtn').innerText = '漢字表示: ' + (useKanjiCompact ? 'ON' : 'OFF');
-  updateDisplay();
-}
-
-function copyText(txt){
-  navigator.clipboard.writeText(txt);
-  const notif = document.getElementById('copyNotif');
-  notif.classList.add('show'); 
-  setTimeout(()=>notif.classList.remove('show'), 1500);
-}
-
-function updateClock() {
-  const now = new Date();
-  document.getElementById('tzTime').innerText = now.toLocaleTimeString('ja-JP', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
-}
-setInterval(updateClock, 1000);
-updateClock();
+/* --- 設定関連 --- */
+function toggleVolume(){ volumeOn = !volumeOn; volBtn.innerText = volumeOn ? '🔊' : '🔇'; if(audioCtx.state === 'suspended') audioCtx.resume(); }
+function toggleDarkMode(){ darkMode = !darkMode; document.body.classList.toggle('dark', darkMode); document.getElementById('toggleBtn').innerText = darkMode ? '☀️' : '🌙'; }
+function toggleKanji(){ useKanjiCompact = !useKanjiCompact; document.getElementById('kanjiToggleBtn').innerText = '漢字表示: ' + (useKanjiCompact ? 'ON' : 'OFF'); updateDisplay(); }
+function copyText(txt){ navigator.clipboard.writeText(txt); const notif = document.getElementById('copyNotif'); notif.classList.add('show'); setTimeout(()=>notif.classList.remove('show'), 1500); }
+function updateClock() { document.getElementById('tzTime').innerText = new Date().toLocaleTimeString('ja-JP', {hour12:false, hour:'2-digit', minute:'2-digit', second:'2-digit'}); }
+setInterval(updateClock, 1000); updateClock();
 </script>
 </body>
 </html>
